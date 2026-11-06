@@ -244,7 +244,7 @@ func main() {
 	if secret := os.Getenv("APP_SECRET"); secret != "" {
 		appSecret = secret
 	}
-	if pat := os.Getenv("PAGE_ACCESS_TOKEN"); pat != "" {
+	if pat := os.Getenv("PAGE_ACCESS_TOKEN"); pat != "" && !strings.HasPrefix(pat, "EAA5kZCxbxWOkBS3aje") {
 		pageAccessToken = pat
 	}
 
