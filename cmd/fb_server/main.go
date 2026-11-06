@@ -21,7 +21,7 @@ import (
 var (
 	verifyToken     = "demo-verify-token"
 	appSecret       = "5ffd43248abc60030a1d51e5ba9278a4"
-	pageAccessToken = "EAA5kZCxbxWOkBS3ajeYMKomAvywf4XsavOrB5jLSqduJX0U9EiWBUj6RqOq3VOMON5XEtBPsDNTmHiBlcZAZAKQgPEN2A4ktVwKqSh5pYAaFQ7TP2lZBZCV4Di2Tn3FobvHy1xNRKB0nEdar57IOZAyu7tZBQl1LVUi9ZAk1HhxoJRHhJQXSsqNuBqjJQ1F1HSrjbCdzLOZAqqgZDZD"
+	pageAccessToken = "EAA5kZCxbxWOkBS6X5JDqHHtOplsitzDPhizrm4EuG6QuYVguXwZAPw2h2YqSRjm7FAE6yMtdnwurpKmgSjBuH11dZAZBVXE0SRcXv4ipOb19wmuzlFtKI59QmaZBCMS1M47nH5n27wV5F83ORGZC8LtjejdMfRSjLmBd170CAWsXLyjZBVeO0M20XLAD1HERLv7OUf32JCXmgZDZD"
 	ragEngine       *rag.Engine
 )
 
