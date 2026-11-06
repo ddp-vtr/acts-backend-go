@@ -1,12 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"acts-backend-go/internal/database"
+	"acts-backend-go/internal/model"
+	"acts-backend-go/internal/rag"
 )
 
 func TestNormalizePort(t *testing.T) {
@@ -130,3 +137,84 @@ func TestWebhookVerification(t *testing.T) {
 		t.Fatalf("expected 403, got %d", rrBad.Code)
 	}
 }
+
+func TestChatApiHandler_CurrentViewing(t *testing.T) {
+	// Mock LLM server
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqPayload struct {
+			Messages []map[string]string `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&reqPayload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Verify system prompt has context lock
+		hasContextLock := false
+		for _, m := range reqPayload.Messages {
+			if m["role"] == "system" && strings.Contains(m["content"], "[SẢN PHẨM KHÁCH ĐANG XEM TRÊN MÀN HÌNH]") {
+				hasContextLock = true
+				break
+			}
+		}
+		if !hasContextLock {
+			t.Errorf("expected system prompt to contain context lock for current_viewing")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"choices":[{"message":{"content":"Dạ sản phẩm BBIA Chaltteok Blush #01 Milk Chaltteok có sẵn mẫu thử tại showroom ạ!"}}]}`))
+	}))
+	defer mockLLM.Close()
+
+	repo := database.NewRepository()
+	ragEngine = rag.NewEngine(repo, mockLLM.URL, "test-api-key", "test-model")
+
+	reqBody := `{
+		"message": "có mẫu thử không em?",
+		"current_viewing": {
+			"id": 2,
+			"name": "BBIA Chaltteok Blush #01 Milk Chaltteok",
+			"price": "235.000₫",
+			"category": "phan"
+		},
+		"chat_history": [
+			{"role": "user", "content": "chào em"},
+			{"role": "assistant", "content": "Dạ em chào Chị ạ!"}
+		]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", bytes.NewBufferString(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	chatApiHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp model.ChatResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse ChatResponse: %v", err)
+	}
+
+	if !strings.Contains(resp.Reply, "Milk Chaltteok") {
+		t.Errorf("expected reply to mention Milk Chaltteok, got: %s", resp.Reply)
+	}
+
+	if len(resp.MatchedItems) == 0 {
+		t.Fatalf("expected MatchedItems to contain viewing product, got 0 items")
+	}
+
+	firstItem := resp.MatchedItems[0]
+	if firstItem.ID != 2 && !strings.Contains(firstItem.Name, "Chaltteok Blush") {
+		t.Errorf("expected first matched item to be current viewing product, got ID=%d, Name=%s", firstItem.ID, firstItem.Name)
+	}
+
+	if firstItem.PriceDisplay != "235.000₫" {
+		t.Errorf("expected PriceDisplay to be '235.000₫', got: %s", firstItem.PriceDisplay)
+	}
+}
+
+

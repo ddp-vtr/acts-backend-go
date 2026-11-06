@@ -33,6 +33,40 @@ func (r *Repository) GetFeaturedProducts(limit int) []model.Product {
 	return featured
 }
 
+// Lấy sản phẩm theo ID hoặc SkyID
+func (r *Repository) GetProductByID(id int) *model.Product {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if id <= 0 {
+		return nil
+	}
+	for _, p := range r.products {
+		if p.ID == id || p.SkyID == id {
+			res := p
+			return &res
+		}
+	}
+	return nil
+}
+
+// Tìm sản phẩm theo tên tương đối
+func (r *Repository) FindProductByName(name string) *model.Product {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	n := strings.TrimSpace(strings.ToLower(name))
+	if n == "" {
+		return nil
+	}
+	for _, p := range r.products {
+		pLower := strings.ToLower(p.Name)
+		if strings.Contains(n, pLower) || strings.Contains(pLower, n) {
+			res := p
+			return &res
+		}
+	}
+	return nil
+}
+
 // Lọc sản phẩm chuẩn SQL logic: lọc cứng Category, Price, Stock > 0 và kết hợp Semantic Score
 func (r *Repository) SearchProducts(category string, maxPrice int, undertone string, query string, limit int) []model.Product {
 	r.mu.RLock()
