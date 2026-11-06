@@ -217,4 +217,131 @@ func TestChatApiHandler_CurrentViewing(t *testing.T) {
 	}
 }
 
+func TestExtractUserText(t *testing.T) {
+	// 1. Text message
+	var msg1 WebhookMessagingItem
+	msg1.Message = &struct {
+		MID        string `json:"mid"`
+		Text       string `json:"text"`
+		QuickReply *struct {
+			Payload string `json:"payload"`
+		} `json:"quick_reply"`
+	}{Text: "  Xin chào shop  "}
+	if got := extractUserText(msg1); got != "Xin chào shop" {
+		t.Errorf("expected 'Xin chào shop', got %q", got)
+	}
+
+	// 2. Quick reply
+	var msg2 WebhookMessagingItem
+	msg2.Message = &struct {
+		MID        string `json:"mid"`
+		Text       string `json:"text"`
+		QuickReply *struct {
+			Payload string `json:"payload"`
+		} `json:"quick_reply"`
+	}{
+		QuickReply: &struct {
+			Payload string `json:"payload"`
+		}{Payload: "QUICK_REPLY_ACTION"},
+	}
+	if got := extractUserText(msg2); got != "QUICK_REPLY_ACTION" {
+		t.Errorf("expected 'QUICK_REPLY_ACTION', got %q", got)
+	}
+
+	// 3. Postback payload
+	var msg3 WebhookMessagingItem
+	msg3.Postback = &struct {
+		Title   string `json:"title"`
+		Payload string `json:"payload"`
+	}{Title: "Bắt đầu", Payload: "GET_STARTED"}
+	if got := extractUserText(msg3); got != "GET_STARTED" {
+		t.Errorf("expected 'GET_STARTED', got %q", got)
+	}
+
+	// 4. Postback title fallback
+	var msg4 WebhookMessagingItem
+	msg4.Postback = &struct {
+		Title   string `json:"title"`
+		Payload string `json:"payload"`
+	}{Title: "Tư vấn", Payload: ""}
+	if got := extractUserText(msg4); got != "Tư vấn" {
+		t.Errorf("expected 'Tư vấn', got %q", got)
+	}
+
+	// 5. Empty item
+	var msg5 WebhookMessagingItem
+	if got := extractUserText(msg5); got != "" {
+		t.Errorf("expected empty string, got %q", got)
+	}
+}
+
+func TestBuildCarouselPayload(t *testing.T) {
+	// Empty items
+	if payload := buildCarouselPayload("user123", nil); payload != nil {
+		t.Errorf("expected nil payload for empty items")
+	}
+
+	prods := []model.Product{
+		{ID: 1, Name: "Product 1", PriceDisplay: "160.000₫", Desc: "Desc 1", ImageUrl: "https://example.com/1.png"},
+		{ID: 2, Name: "Product 2", PriceDisplay: "235.000₫", Desc: "Desc 2"},
+		{ID: 3, Name: "Product 3", PriceDisplay: "189.000₫", Desc: "Desc 3"},
+		{ID: 4, Name: "Product 4", PriceDisplay: "495.000₫", Desc: "Desc 4"},
+		{ID: 5, Name: "Product 5", PriceDisplay: "220.000₫", Desc: "Desc 5"},
+	}
+
+	payload := buildCarouselPayload("user_recip", prods)
+	if payload == nil {
+		t.Fatalf("expected non-nil payload")
+	}
+
+	recip, ok := payload["recipient"].(map[string]string)
+	if !ok || recip["id"] != "user_recip" {
+		t.Errorf("expected recipient id 'user_recip', got %v", recip)
+	}
+
+	msgMap, ok := payload["message"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("message map invalid")
+	}
+
+	attach, ok := msgMap["attachment"].(map[string]interface{})
+	if !ok || attach["type"] != "template" {
+		t.Fatalf("attachment template invalid")
+	}
+
+	pLoad, ok := attach["payload"].(map[string]interface{})
+	if !ok || pLoad["template_type"] != "generic" {
+		t.Fatalf("generic template invalid")
+	}
+
+	elements, ok := pLoad["elements"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("elements invalid")
+	}
+
+	// Capped at 4 items
+	if len(elements) != 4 {
+		t.Errorf("expected 4 elements max, got %d", len(elements))
+	}
+
+	// Verify buttons point to miniapp and zalo
+	for idx, elem := range elements {
+		buttons, ok := elem["buttons"].([]map[string]interface{})
+		if !ok || len(buttons) != 2 {
+			t.Fatalf("element %d buttons invalid, expected 2 buttons", idx)
+		}
+		if buttons[0]["type"] != "web_url" || buttons[0]["url"] != "https://miniapp.ddphuong.id.vn/" {
+			t.Errorf("element %d button 0 should point to miniapp, got %v", idx, buttons[0])
+		}
+		if buttons[1]["type"] != "web_url" || buttons[1]["url"] != "https://zalo.me/0901911660" {
+			t.Errorf("element %d button 1 should point to zalo, got %v", idx, buttons[1])
+		}
+	}
+
+	// Verify fallback image for item without image
+	if elements[1]["image_url"] == "" {
+		t.Errorf("element 1 missing fallback image")
+	}
+}
+
 

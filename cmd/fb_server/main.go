@@ -25,24 +25,53 @@ var (
 	ragEngine       *rag.Engine
 )
 
+type WebhookMessagingItem struct {
+	Sender struct {
+		ID string `json:"id"`
+	} `json:"sender"`
+	Recipient struct {
+		ID string `json:"id"`
+	} `json:"recipient"`
+	Message *struct {
+		MID        string `json:"mid"`
+		Text       string `json:"text"`
+		QuickReply *struct {
+			Payload string `json:"payload"`
+		} `json:"quick_reply"`
+	} `json:"message"`
+	Postback *struct {
+		Title   string `json:"title"`
+		Payload string `json:"payload"`
+	} `json:"postback"`
+}
+
 type WebhookEvent struct {
 	Object string `json:"object"`
 	Entry  []struct {
-		ID        string `json:"id"`
-		Time      int64  `json:"time"`
-		Messaging []struct {
-			Sender struct {
-				ID string `json:"id"`
-			} `json:"sender"`
-			Recipient struct {
-				ID string `json:"id"`
-			} `json:"recipient"`
-			Message struct {
-				MID  string `json:"mid"`
-				Text string `json:"text"`
-			} `json:"message"`
-		} `json:"messaging"`
+		ID        string                 `json:"id"`
+		Time      int64                  `json:"time"`
+		Messaging []WebhookMessagingItem `json:"messaging"`
 	} `json:"entry"`
+}
+
+func extractUserText(msg WebhookMessagingItem) string {
+	if msg.Message != nil {
+		if msg.Message.Text != "" {
+			return strings.TrimSpace(msg.Message.Text)
+		}
+		if msg.Message.QuickReply != nil && msg.Message.QuickReply.Payload != "" {
+			return strings.TrimSpace(msg.Message.QuickReply.Payload)
+		}
+	}
+	if msg.Postback != nil {
+		if msg.Postback.Payload != "" {
+			return strings.TrimSpace(msg.Postback.Payload)
+		}
+		if msg.Postback.Title != "" {
+			return strings.TrimSpace(msg.Postback.Title)
+		}
+	}
+	return ""
 }
 
 func verifySignature(payload []byte, signature string) bool {
@@ -76,13 +105,11 @@ func sendTextMessage(recipientID, text string) error {
 	return nil
 }
 
-// Gửi khung Generic Template (Thẻ Carousel sản phẩm kèm ảnh và nút xem web)
-func sendProductCarousel(recipientID string, items []model.Product) error {
+// Xây dựng payload Generic Template (Thẻ Carousel sản phẩm)
+func buildCarouselPayload(recipientID string, items []model.Product) map[string]interface{} {
 	if len(items) == 0 {
 		return nil
 	}
-	url := fmt.Sprintf("https://graph.facebook.com/v21.0/me/messages?access_token=%s", pageAccessToken)
-
 	var elements []map[string]interface{}
 	for i, item := range items {
 		if i >= 4 { // Messenger cho tối đa 10 thẻ, lấy 3-4 thẻ đẹp nhất
@@ -102,12 +129,17 @@ func sendProductCarousel(recipientID string, items []model.Product) error {
 					"url":   "https://miniapp.ddphuong.id.vn/",
 					"title": "Xem Sản Phẩm",
 				},
+				{
+					"type":  "web_url",
+					"url":   "https://zalo.me/0901911660",
+					"title": "Zalo CSKH 1:1",
+				},
 			},
 		}
 		elements = append(elements, elem)
 	}
 
-	payload := map[string]interface{}{
+	return map[string]interface{}{
 		"recipient": map[string]string{"id": recipientID},
 		"message": map[string]interface{}{
 			"attachment": map[string]interface{}{
@@ -119,7 +151,15 @@ func sendProductCarousel(recipientID string, items []model.Product) error {
 			},
 		},
 	}
+}
 
+// Gửi khung Generic Template (Thẻ Carousel sản phẩm kèm ảnh và nút xem web)
+func sendProductCarousel(recipientID string, items []model.Product) error {
+	payload := buildCarouselPayload(recipientID, items)
+	if payload == nil {
+		return nil
+	}
+	url := fmt.Sprintf("https://graph.facebook.com/v21.0/me/messages?access_token=%s", pageAccessToken)
 	body, _ := json.Marshal(payload)
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
 	if err != nil {
@@ -169,7 +209,10 @@ func webhookHandler(w http.ResponseWriter, r *http.Request) {
 			for _, entry := range event.Entry {
 				for _, msg := range entry.Messaging {
 					senderID := msg.Sender.ID
-					text := msg.Message.Text
+					text := extractUserText(msg)
+					if strings.EqualFold(text, "GET_STARTED") || strings.EqualFold(text, "START") || strings.EqualFold(text, "BẮT ĐẦU") || strings.EqualFold(text, "BAT_DAU") {
+						text = "Tư vấn sản phẩm nổi bật"
+					}
 					if text != "" {
 						log.Printf("[Messenger] Received from %s: %s", senderID, text)
 						go func(sID, userMsg string) {
